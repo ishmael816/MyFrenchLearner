@@ -103,7 +103,7 @@ def _init_session(cfg, generator, conn) -> dict:
 
 def _handle_command(cmd_line: str, ctx: ConversationContext, handler: DialogueHandler,
                     generator: TextGenerator, vocab_mgr: VocabManager, archiver: Archiver,
-                    session: dict, cfg) -> bool:
+                    session: dict, cfg, conn) -> bool:
     """处理斜杠命令。返回 True 继续，False 退出。"""
     parts = cmd_line[1:].split()
     if not parts:
@@ -133,6 +133,12 @@ def _handle_command(cmd_line: str, ctx: ConversationContext, handler: DialogueHa
         session["title"] = gt.title
         ctx.text = gt.text
         ctx.title = gt.title
+        # 同步更新数据库
+        conn.execute(
+            "UPDATE sessions SET text = ?, title = ? WHERE id = ?",
+            (gt.text, gt.title, session["id"]),
+        )
+        conn.commit()
         print(f"📖 {gt.text}\n")
     elif cmd == "level":
         if len(parts) < 2 or parts[1].upper() not in LEVELS:
@@ -217,6 +223,13 @@ def run_interactive():
     db_path = cfg.storage["db_path"]
     session_dir = cfg.storage["session_dir"]
 
+    # 验证 API key
+    if not api_key:
+        print("❌ 错误: DEEPSEEK_API_KEY 未设置")
+        print("请设置环境变量: export DEEPSEEK_API_KEY=sk-xxx")
+        print("或在 config.yaml 中配置 api.api_key")
+        sys.exit(1)
+
     init_db(db_path)
     conn = get_connection(db_path)
 
@@ -260,7 +273,7 @@ def run_interactive():
                 _save_dialogue_log(conn, session["id"], "user", user_input)
                 should_continue = _handle_command(
                     user_input, ctx, handler, generator,
-                    vocab_mgr, archiver, session, cfg
+                    vocab_mgr, archiver, session, cfg, conn
                 )
                 if not should_continue:
                     break

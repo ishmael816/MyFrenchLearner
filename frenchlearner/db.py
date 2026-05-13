@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS vocabulary (
     review_count INTEGER NOT NULL DEFAULT 0,
     created_at   TEXT NOT NULL,
     FOREIGN KEY (session_id) REFERENCES sessions(id),
-    UNIQUE(lemma, translation)
+    UNIQUE(lemma, translation, session_id)
 );
 
 CREATE TABLE IF NOT EXISTS dialogue_log (
@@ -40,7 +40,9 @@ CREATE TABLE IF NOT EXISTS dialogue_log (
 
 
 def get_connection(db_path: str) -> sqlite3.Connection:
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    parent = os.path.dirname(db_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")

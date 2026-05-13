@@ -66,7 +66,7 @@ class TestDB:
             try:
                 conn.execute(
                     "INSERT INTO vocabulary (word, lemma, translation, session_id, created_at) VALUES (?,?,?,?,?)",
-                    ("se promener", "se promener", "散步", "s2", "2024-01-02"),
+                    ("se promener", "se promener", "散步", "s1", "2024-01-02"),
                 )
                 conn.commit()
                 assert False, "应抛出 IntegrityError"

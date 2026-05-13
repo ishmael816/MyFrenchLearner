@@ -52,7 +52,7 @@ class TestFullFlow:
         assert "公园" in content
 
     def test_vocab_deduplication(self):
-        """同一词不同 session 的去重行为"""
+        """同一词同 session 内去重，但跨 session 独立"""
         tmpdir = tempfile.mkdtemp()
         db_path = os.path.join(tmpdir, "test.db")
         init_db(db_path)
@@ -72,10 +72,12 @@ class TestFullFlow:
         conn.close()
 
         vm.add("s1", "manger", "吃")
-        vm.add("s2", "manger", "吃")  # 应被 IGNORE
+        vm.add("s1", "manger", "吃")  # 同 session 内去重
+        vm.add("s2", "manger", "吃")  # 跨 session 独立，各自保存
 
-        all_words = vm.list_all()
-        assert len(all_words) == 1  # 去重
+        assert len(vm.list_by_session("s1")) == 1
+        assert len(vm.list_by_session("s2")) == 1
+        assert len(vm.list_all()) == 2  # 跨 session 各自一条
 
     def test_dialogue_archive_integration(self):
         """对话记录集成到归档"""
