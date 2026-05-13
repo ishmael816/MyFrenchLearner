@@ -87,8 +87,25 @@ _config: Config | None = None
 def get_config() -> Config:
     global _config
     if _config is None:
-        config_path = Path("config.yaml")
-        if not config_path.exists():
-            config_path = Path("config.example.yaml")
+        pkg_dir = Path(__file__).parent
+        project_root = pkg_dir.parent
+
+        # 搜索顺序：CWD → 项目根目录（开发模式）→ 包内置
+        search_paths = [
+            Path("config.yaml"),
+            project_root / "config.yaml",
+            Path("config.example.yaml"),
+            project_root / "config.example.yaml",
+            pkg_dir / "config.example.yaml",
+        ]
+        config_path = None
+        for p in search_paths:
+            if p.exists():
+                config_path = p
+                break
+
+        if config_path is None:
+            raise FileNotFoundError("未找到 config.yaml 或 config.example.yaml")
+
         _config = Config.from_yaml(str(config_path))
     return _config

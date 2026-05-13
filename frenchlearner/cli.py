@@ -11,6 +11,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.styles import Style
+from prompt_toolkit.key_binding import KeyBindings
 
 from frenchlearner.config import get_config
 from frenchlearner.db import init_db, get_connection
@@ -25,7 +26,7 @@ STYLE = Style.from_dict({
 })
 
 LEVELS = ["A1", "A2", "B1", "B2", "C1"]
-COMMANDS = ["vocab", "grammar", "next", "level", "done", "help"]
+COMMANDS = ["vocab", "grammar", "next", "level", "done", "help", "text"]
 
 
 class FrenchCompleter(Completer):
@@ -75,9 +76,8 @@ def _extract_words(text: str) -> list[str]:
 
 def _init_session(cfg, generator, conn) -> dict:
     level = cfg.default_level
-    print(f"\n🎓 FrenchLearner | Niveau: {level}")
-    print("─" * cfg.display["text_width"])
-    print("\n⏳ Génération du texte en cours...\n")
+    print(f"FrenchLearner [{level}]")
+    print(f"Generating...")
 
     gt = generator.generate(level)
 
@@ -89,9 +89,7 @@ def _init_session(cfg, generator, conn) -> dict:
     )
     conn.commit()
 
-    print(f"📖 {gt.text}\n")
-    print(f"📝 {gt.summary}\n")
-    print("─" * cfg.display["text_width"])
+    print(f"\n{gt.text}\n")
 
     return {
         "id": session_id,
@@ -116,7 +114,7 @@ def _handle_command(cmd_line: str, ctx: ConversationContext, handler: DialogueHa
         return False
 
     elif cmd == "vocab":
-        _do_vocab(parts, ctx, vocab_mgr, session)
+        _do_vocab(parts, ctx, vocab_mgr, handler, session)
     elif cmd == "grammar":
         topic = " ".join(parts[1:]) if len(parts) > 1 else ""
         if not topic:
@@ -124,10 +122,10 @@ def _handle_command(cmd_line: str, ctx: ConversationContext, handler: DialogueHa
             return True
         question = f"请讲解一下法语语法：{topic}"
         reply = handler.ask(ctx, question)
-        print(f"\n🤖 {reply}\n")
+        print(f"AI: {reply}\n")
     elif cmd == "next":
         level = session["level"]
-        print("\n⏳ 生成新文本...\n")
+        print("\nGenerating new text...\n")
         gt = generator.generate(level)
         session["text"] = gt.text
         session["title"] = gt.title
@@ -139,69 +137,75 @@ def _handle_command(cmd_line: str, ctx: ConversationContext, handler: DialogueHa
             (gt.text, gt.title, session["id"]),
         )
         conn.commit()
-        print(f"📖 {gt.text}\n")
+        print(f"\n{gt.text}\n")
+    elif cmd == "text":
+        print(f"\n{ctx.text}\n")
     elif cmd == "level":
         if len(parts) < 2 or parts[1].upper() not in LEVELS:
             print(f"级别: {', '.join(LEVELS)}")
             return True
         session["level"] = parts[1].upper()
         ctx.level = session["level"]
-        print(f"✅ 级别已切换为 {session['level']}")
+        print(f"Level switched to {session['level']}")
     elif cmd == "help":
         print("""
-/vocab add <词>    标记生词
-/vocab list        当前会话生词
-/vocab remove <词> 取消标记
-/grammar <主题>    语法讲解
-/next              换一篇新文本
-/level <级别>      切换难度 (A1/B1/C1...)
-/done              结束学习并归档
-/help              显示此帮助
-Ctrl+D             退出
+/vocab add <word>  Mark word
+/vocab list        List words
+/vocab remove <word> Remove word
+/grammar <topic>   Grammar help
+/next              New text
+/level <A1/B1/C1>  Change level
+/text              Show text again
+/done              End session
+Ctrl+D             Quit
 """)
     return True
 
 
-def _do_vocab(parts, ctx, vocab_mgr, session):
+def _do_vocab(parts, ctx, vocab_mgr, handler, session):
     if len(parts) < 2:
-        print("用法: /vocab add|list|remove [词]")
+        print("Usage: /vocab add|list|remove [word]")
         return
     sub = parts[1].lower()
     if sub == "add":
         if len(parts) < 3:
-            print("用法: /vocab add <词>")
+            print("Usage: /vocab add <word>")
             return
         word = parts[2]
-        vocab_mgr.add(session["id"], word, "", level=session["level"])
-        ctx.add_vocab(word, "")
-        print(f"✅ 已记录: {word}")
+        # 调用 AI 获取翻译
+        question = f"请解释法语单词「{word}」的意思。格式：原形 词性 — 中文释义（不要加任何额外说明）"
+        reply = handler.ask(ctx, question)
+        translation = reply.strip()
+        vocab_mgr.add(session["id"], word, translation, level=session["level"])
+        ctx.add_vocab(word, translation)
+        print(f"Recorded: {word} — {translation}")
     elif sub == "list":
         words = vocab_mgr.list_by_session(session["id"])
         if not words:
-            print("（暂无标记生词）")
+            print("(no words marked)")
         else:
             for w in words:
-                print(f"  • {w['word']}")
+                print(f"  {w['word']} — {w['translation']}")
     elif sub == "remove":
         if len(parts) < 3:
-            print("用法: /vocab remove <词>")
+            print("Usage: /vocab remove <word>")
             return
         word = parts[2]
         vocab_mgr.remove(session["id"], word)
         ctx.remove_vocab(word)
-        print(f"✅ 已移除: {word}")
+        print(f"Removed: {word}")
     else:
-        print(f"未知子命令: {sub}")
+        print(f"Unknown subcommand: {sub}")
 
 
 def _do_done(archiver, session, ctx):
-    print("\n📦 归档中...")
+    print("\nArchiving...")
     archiver.archive_session(session["id"])
     path = archiver.export_markdown(session["id"])
     word_count = len(ctx.vocabulary)
-    print(f"✅ 已归档: {session['title']}")
-    print(f"📁 生词: {word_count} 个 | 文件: {path}")
-    print(f"\n👋 À bientôt !\n")
+    print(f"Archived: {session['title']}")
+    print(f"Words: {word_count} | File: {path}")
+    print(f"\nA bientot!\n")
 
 
 def _save_dialogue_log(conn, session_id: str, role: str, content: str):
@@ -225,7 +229,7 @@ def run_interactive():
 
     # 验证 API key
     if not api_key:
-        print("❌ 错误: DEEPSEEK_API_KEY 未设置")
+        print("Error: DEEPSEEK_API_KEY is not set")
         print("请设置环境变量: export DEEPSEEK_API_KEY=sk-xxx")
         print("或在 config.yaml 中配置 api.api_key")
         sys.exit(1)
@@ -252,10 +256,34 @@ def run_interactive():
 
         hist_dir = os.path.dirname(db_path)
         os.makedirs(hist_dir, exist_ok=True)
+
+        kb = KeyBindings()
+
+        @kb.add("c-g")
+        def _(event):
+            event.current_buffer.insert_text("/grammar ")
+
+        @kb.add("c-v")
+        def _(event):
+            event.current_buffer.insert_text("/vocab add ")
+
+        @kb.add("c-n")
+        def _(event):
+            event.current_buffer.insert_text("/next")
+
+        @kb.add("c-t")
+        def _(event):
+            event.current_buffer.insert_text("/text")
+
+        @kb.add("c-l")
+        def _(event):
+            event.current_buffer.insert_text("/vocab list")
+
         session_obj = PromptSession(
             history=FileHistory(os.path.join(hist_dir, ".french_history")),
             style=STYLE,
             completer=completer,
+            key_bindings=kb,
         )
 
         while True:
@@ -279,13 +307,12 @@ def run_interactive():
                     break
             else:
                 _save_dialogue_log(conn, session["id"], "user", user_input)
-                print()
                 try:
                     reply = handler.ask(ctx, user_input)
                     _save_dialogue_log(conn, session["id"], "assistant", reply)
-                    print(f"🤖 {reply}\n")
+                    print(f"\nAI: {reply}\n")
                 except Exception as e:
-                    print(f"❌ AI 请求失败: {e}\n请检查网络连接或 API 配置。\n")
+                    print(f"\nError: {e}\n")
     finally:
         conn.close()
 
@@ -331,8 +358,8 @@ def main():
                 "SELECT id, level, title, status, created_at FROM sessions ORDER BY created_at DESC LIMIT 20"
             ).fetchall()
             for r in rows:
-                status_icon = "📦" if r["status"] == "archived" else "🟢"
-                print(f"{status_icon} {r['id'][:8]} {r['level']:3s} {r['created_at'][:10]} {r['title']}")
+                status = "[archived]" if r["status"] == "archived" else "[active]"
+                print(f"{status} {r['id'][:8]} {r['level']:3s} {r['created_at'][:10]} {r['title']}")
         finally:
             conn.close()
     elif args.command == "session" and args.action == "show":
@@ -342,16 +369,16 @@ def main():
             if not s:
                 print(f"会话不存在: {args.id}")
                 return
-            print(f"📖 {s['title']}  [{s['level']}]")
-            print(f"📅 {s['created_at']}")
+            print(f"  {s['title']}  [{s['level']}]")
+            print(f"  {s['created_at']}")
             print(f"\n{s['text']}\n")
             dialogue = conn.execute(
                 "SELECT role, content FROM dialogue_log WHERE session_id = ? ORDER BY created_at",
                 (s["id"],),
             ).fetchall()
             for d in dialogue:
-                role_icon = "🧑" if d["role"] == "user" else "🤖"
-                print(f"{role_icon} {d['content']}")
+                role_label = "You" if d["role"] == "user" else "AI"
+                print(f"{role_label} {d['content']}")
         finally:
             conn.close()
     else:

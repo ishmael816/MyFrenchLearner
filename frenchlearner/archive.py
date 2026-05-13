@@ -74,8 +74,8 @@ class Archiver:
         lines.append("")
         lines.append("## Dialogue")
         for d in dialogue:
-            role_label = "🧑" if d["role"] == "user" else "🤖"
-            lines.append(f"- **{role_label}**: {d['content']}")
+            role_label = "You" if d["role"] == "user" else "AI"
+            lines.append(f"{role_label}: {d['content']}")
 
         lines.append("")
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
