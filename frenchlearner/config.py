@@ -25,7 +25,7 @@ class Config:
                 var = m.group(1)
                 val = os.environ.get(var)
                 if val is None:
-                    raise ValueError(f"环境变量 ${var} 未设置")
+                    return ""  # 未设置环境变量时返回空字符串，由调用方处理
                 return val
             return obj
         elif isinstance(obj, dict):

@@ -47,8 +47,8 @@ api:
         finally:
             os.unlink(path)
 
-    def test_missing_env_var_raises(self):
-        """未设置的环境变量抛异常"""
+    def test_missing_env_var_returns_empty(self):
+        """未设置的环境变量返回空字符串"""
         yaml_content = """
 api:
   api_key: "${NONEXISTENT_VAR_XYZ}"
@@ -57,8 +57,8 @@ api:
             f.write(yaml_content)
             path = f.name
         try:
-            with pytest.raises(ValueError, match="NONEXISTENT_VAR_XYZ"):
-                Config.from_yaml(path)
+            cfg = Config.from_yaml(path)
+            assert cfg.api["api_key"] == ""  # 未设置时返回空字符串
         finally:
             os.unlink(path)
 
